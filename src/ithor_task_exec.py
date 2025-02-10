@@ -1,0 +1,1 @@
+'''Execute iThor tasks and take screenshots'''
