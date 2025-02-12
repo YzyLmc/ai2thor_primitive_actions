@@ -11,31 +11,30 @@
         stoveBurner - StoveBurner
         cabinet - Cabinet
         drawer - Drawer
+        shelf - Shelf
+        fridge - Fridge
         bread - Bread
         potato - Potato
         egg - Egg
         mug - Mug
-        plate - Plate
+        ; plate - Plate
         knife - Knife
-        pan - Pan
         faucet - Faucet
     )
     
     (:init
         (at-location robot1 counter)
-        (item-on bread counter)
-        (item-on potato counter)
-        (item-on egg counter)
-        (item-on mug counter)
-        (item-on plate counter)
-        (item-on knife counter)
-        (item-on sponge counter)
-        (item-on pan stoveBurner)
-        (is-open cabinet)
-        (is-open drawer)
+        (item-in bread cabinet)
+        (item-in potato fridge)
+        (item-in egg fridge)
+        (item-on mug shelf)
+        (item-on knife sink)
+        (item-in sponge drawer)
         (not (is-clean mug))
-        (is-clean plate)
         (is-full mug)
+        (not (is-open fridge))
+        (not (is-open cabinet))
+        (not (is-open drawer))
         (not (is-on toaster))
         (not (is-on coffeeMachine))
         (not (is-on stoveBurner))
@@ -44,9 +43,8 @@
     (:goal
         (and
             ; (breakfast robot1)
-            (is-cooked bread)
-            (item-on bread plate)
-            ; (coffee-made coffeeMachine)
+            (coffee-made coffeeMachine)
+            (omelet-made robot1)
         )
     )
 )

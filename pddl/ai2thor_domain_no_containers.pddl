@@ -5,17 +5,17 @@
 
     (:types
 
-        location item Robot - object
-        receptacle openable toggleable - location
-        Bowl Knife Bottle Fork Spoon DishSponge container crackable dirtyable sliceable pourable - item
+        Robot
+        Cabinet Drawer CounterTop StoveBurner Shelf Sink Fridge Toaster CoffeeMachine Faucet Microwave - location
+        Knife Bottle DishSponge Egg Mug Bread Potato - item
         Drawer Cabinet Fridge Microwave - openable
-        Toaster Pan Plate Pot Cup Mug Bowl - container
-        Cabinet Drawer CounterTop StoveBurner Shelf Sink CoffeeMachine - receptacle
+        Toaster CoffeeMachine - container
+        Cabinet Drawer CounterTop StoveBurner Shelf Sink - receptacle
         Toaster CoffeeMachine Faucet StoveBurner Microwave - toggleable
-        Egg Bowl Mug - crackable
-        Bowl Pan Plate Cup Mug Pot - dirtyable
-        Bread Potato Tomato Lettuce - sliceable
-        Bowl Bottle Pot Cup Mug - pourable
+        Egg Mug - crackable
+        Mug - dirtyable
+        Bread Potato - sliceable
+        Mug - pourable
 
     )
     (:predicates
@@ -48,7 +48,7 @@
         )
     )
 
-    (:action open-container
+    (:action open-openable
         :parameters (?r - robot ?o - openable)
         :precondition (and (not (is-open ?o))
             (at-location ?r ?o)
@@ -56,79 +56,109 @@
         :effect (is-open ?o)
     )
 
-    (:action move-obj-openable-to-receptacle
-        :parameters (?o - openable ?re - receptacle ?i - item ?r - robot)
-        :precondition (and (at-location ?r ?o)
-            (item-in ?i ?o)
+    (:action pick-n-place-in-openable
+        :parameters (?r - robot ?i - item ?o - openable)
+        :precondition (and
+            (forall
+                (?j - openable)
+                (not (and (not (is-open ?j)) (item-in ?i ?j)))
+            )
             (is-open ?o)
         )
-        :effect (and (item-on ?i ?re)
-            (not (item-in ?i ?o))
+        :effect (and
             (forall
-                (?p - location)
-                (not (at-location ?r ?p))
+                (?l - openable)
+                (and
+                    (not (item-in ?i ?l))
+                    (not (at-location ?r ?l))
+                )
             )
-            (at-location ?r ?re)
-        )
-    )
-
-    (:action move-obj-receptacle-to-receptacle
-        :parameters (?re1 - receptacle ?re2 - receptacle ?i - item ?r - robot)
-        :precondition (and (at-location ?r ?re1)
-            (item-on ?i ?re1)
-        )
-        :effect (and (item-on ?i ?re2)
-            (not (item-on ?i ?re1))
             (forall
-                (?p - location)
-                (not (at-location ?r ?p))
+                (?re - receptacle)
+                (and
+                    (not (item-on ?i ?re))
+                )
             )
-            (at-location ?r ?re2)
-        )
-    )
-
-    (:action move-obj-receptacle-to-openable
-        :parameters (?re - receptacle ?o - openable ?i - item ?r - robot)
-        :precondition (and (at-location ?r ?re)
-            (item-on ?i ?re)
-        )
-        :effect (and (item-in ?i ?o)
-            (not (item-on ?i ?re))
-            (forall
-                (?p - location)
-                (not (at-location ?r ?p))
-            )
+            (item-in ?i ?o)
             (at-location ?r ?o)
         )
     )
 
-    (:action move-obj-receptacle-to-container
-        :parameters (?re - receptacle ?c - container ?i - item ?r - robot ?l - location)
-        :precondition (and 
-            (at-location ?r ?re)
-            (item-on ?i ?re)
-            (item-on ?c ?l)
-        )
-        :effect (and (item-on ?i ?c)
-            (not (item-on ?i ?re))
+    (:action pick-n-place-on-receptacle
+        :parameters (?r - robot ?i - item ?re - receptacle)
+        :precondition (and
             (forall
-                (?p - location)
-                (not (at-location ?r ?p))
+                (?j - openable)
+                (not (and (not (is-open ?j)) (item-in ?i ?j)))
             )
-            (at-location ?r ?l)
+            (not (item-on ?i ?re))
+        )
+        :effect (and
+            (forall
+                (?l - location)
+                (and
+                    (not (at-location ?r ?l))
+                )
+            )
+            (forall
+                (?l - location)
+                (and
+                    (not (item-in ?i ?l))
+                )
+            )
+            (forall
+                (?rec - receptacle)
+                (and
+                    (not (item-on ?i ?rec))
+                )
+            )
+            (item-on ?i ?re)
+            (at-location ?r ?re)
         )
     )
 
+    (:action pick-n-place-in-container
+        :parameters (?r - robot ?i - item ?c - container)
+        :precondition (and
+            (forall
+                (?j - openable)
+                (not (and (not (is-open ?j)) (item-in ?i ?j)))
+            )
+            (not (item-in ?i ?c))
+            (not (is-occupied ?c))
+        )
+        :effect (and
+            (forall
+                    (?l - location)
+                    (and
+                        (not (at-location ?r ?l))
+                    )
+                )
+            (forall
+                (?l - location)
+                (and
+                    (not (item-in ?i ?l))
+                )
+            )
+            (forall
+                (?re - receptacle)
+                (and
+                    (not (item-on ?i ?re))
+                )
+            )
+            (item-in ?i ?c)
+            (at-location ?r ?c)
+            (is-occupied ?c)
+        )
+    )
 
     ; currently doesn't bring bread to kitchen counter
     ; can add coffee to precond to make it even harder
     (:action make-breakfast
-        :parameters (?k - CounterTop ?r - robot ?p - Plate ?b - Bread)
+        :parameters (?k - CounterTop ?r - robot ?b - Bread)
         :precondition (and
             (is-cooked ?b)
-            (is-clean ?p)
-            (item-on ?b ?p)
-            (item-on ?p ?k)
+            (item-on ?b ?k)
             (at-location ?r ?k)
         )
         :effect (breakfast ?r)
@@ -149,7 +179,7 @@
         :parameters (?r - robot ?t - toggleable)
         :precondition (and
             (at-location ?r ?t)
-            (not(is-on ?t))
+            (not (is-on ?t))
         )
         :effect (is-on ?t)
     )
@@ -170,7 +200,7 @@
         :parameters (?r - robot ?c - CoffeeMachine ?m - Mug)
         :precondition (and
             (at-location ?r ?c)
-            (item-on ?m ?c)
+            (item-in ?m ?c)
             (not (coffee-made ?c))
             (is-clean ?m)
             (not (is-full ?m))
@@ -204,11 +234,10 @@
 
     ; add precondition so only one thing cooked at a time?
     (:action cook-potato
-        :parameters (?r - robot ?po - Potato ?s - StoveBurner ?p - Pan)
+        :parameters (?r - robot ?po - Potato ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s)
-            (item-in ?po ?p)
-            (item-on ?p ?s)
+            (item-on ?po ?s)
             (is-sliced ?po)
             (is-on ?s)
         )
@@ -216,22 +245,20 @@
     )
 
     (:action crack-egg
-        :parameters (?r - robot ?e - Egg ?s - StoveBurner ?p - Pan)
+        :parameters (?r - robot ?e - Egg ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s)
-            (item-in ?e ?s)
-            (item-in ?p ?s)
+            (item-on ?e ?s)
             (not (is-cracked ?e))
         )
         :effect (is-cracked ?e)
     )
 
     (:action cook-egg
-        :parameters (?r - robot ?e - Egg ?s - StoveBurner ?p - Pan)
+        :parameters (?r - robot ?e - Egg ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s)
-            (item-in ?e ?p)
-            (item-on ?p ?s)
+            (item-on ?e ?s)
             (is-cracked ?e)
             (is-on ?s)
             (not (is-cooked ?e))
@@ -240,19 +267,19 @@
     )
 
     (:action omelet-at-counter
-        :parameters (?r - robot ?e - Egg ?k - CounterTop ?p - Plate ?po - Potato ?b - bread)
+        :parameters (?r - robot ?e - Egg ?k - CounterTop ?po - Potato ?b - bread)
         :precondition (and
             (at-location ?r ?k)
-            (item-in ?e ?p)
-            (item-in ?po ?p)
-            (item-in ?b ?p)
-            (item-on ?p ?k)
+            (item-on ?e ?k)
+            (item-on ?po ?k)
+            (item-on ?b ?k)
             (is-cracked ?e)
             (is-cooked ?e)
             (is-sliced ?po)
             (is-cooked ?po)
             (is-sliced ?b)
             (is-cooked ?b)
+            (not (omelet-made ?r))
 
         )
         :effect (omelet-made ?r)

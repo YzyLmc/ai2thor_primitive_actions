@@ -27,6 +27,12 @@ Then clone their repo and build the planner by:
 
 Check more optional components in their full [build instruction](https://github.com/aibasel/downward/blob/main/BUILD.md)
 
+To plan with Fast Downward, cd to the root directory `downward/` and specify the domain and problem files:
+
+```
+./fast-downward.py /path/to/domain.pddl /path/to/problem.pddl  --search "astar(lmcut())"
+```
+
 ## Skills
 ai2thor consists of multiple modes, and each of them has different features. This repo provides support for the following modes:
 - iThor: the vanilla mode which only has high-level actions. We provide wrappers on top of those skills that are more convenient to call and chained together for planning within the domain defined in the PDDL file.
