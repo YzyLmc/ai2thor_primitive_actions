@@ -26,7 +26,10 @@ def move(object_or_location, controller, event):
         return np.sqrt(np.sum((p1-p2)**2, axis=0))
     
     metadata = event.metadata
-    obj = [obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()][0] # only take the first in the list if there are multiple
+    obj = sorted([obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[0]
+    # print(obj["objectId"])
+    # obj = [obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()][0]
+
     avail_positions = controller.step(
         action="GetReachablePositions"
     ).metadata["actionReturn"]
@@ -53,8 +56,9 @@ def move(object_or_location, controller, event):
     # success = dist_pose(event.metadata['agent']['position'], obj['position']) < 2
     return event
 
-def move_object(target_object, target_location, controller, event):
+def move_object(target_object, target_location, controller, event, follow=True, auto_open=False):
     "Handle edge cases by hardcoding if needed. Now is just regular pick & place"
+    "follow :bool: if robot will be ended up at the same location as the object"
     # hardcode some mapping from abbrevs to full name
     full_name_dict = {
         "sink": "sinkbasin"
@@ -64,19 +68,23 @@ def move_object(target_object, target_location, controller, event):
     obj_list = [obj for obj in event.metadata["objects"] if target_object.lower() in obj['objectId'].lower()]
     # egg and bread change names after being cracked or sliced, so they are handled in specific ways
     if "bread" in target_object and any(['BreadSliced' in o['objectId'] for o in obj_list]):
-        obj = [o for o in event.metadata["objects"] if "BreadSliced".lower() in o['objectId'].lower()][1]
+        obj = sorted([o for o in event.metadata["objects"] if "BreadSliced".lower() in o['objectId'].lower()], key=lambda d:d['objectId'])[1]
     elif "potato" in target_object and any(['PotatoSliced' in o['objectId'] for o in obj_list]):
-        obj = [o for o in event.metadata["objects"] if "PotatoSliced".lower() in o['objectId'].lower()][1] # to avoid the larger chunk of potato slice...
+        obj = sorted([o for o in event.metadata["objects"] if "PotatoSliced".lower() in o['objectId'].lower()], key=lambda d:d['name'])[1]
     elif "egg" in target_object and any(['EggCracked' in o['objectId'] for o in obj_list]):
-        obj = [o for o in event.metadata["objects"] if "EggCracked".lower() in o['objectId'].lower()][0]
+        obj = sorted([o for o in event.metadata["objects"] if "EggCracked".lower() in o['objectId'].lower()], key=lambda d:d['objectId'])[0]
     else:
         obj = obj_list[0]
-    location = [o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()][0]
+    # location = [o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()][0]
+    location = sorted([o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()], key=lambda d:d['objectId'])[0]
     assert obj['pickupable'] == True, f"{obj['objectId']} has to be pickupable"
     assert location['receptacle'] == True, f"{location['objectId']} has to be receptacle"
 
     err = []
-    if "pan" in target_location.lower() or "plate" in target_location.lower():
+    if auto_open:
+        if location["openable"] and not location["isOpen"]:
+            event = open(location['objectId'], controller, event)
+    if "shelf" in target_location.lower():
         event = controller.step(
             action="GetSpawnCoordinatesAboveReceptacle",
             objectId=location['objectId'], 
@@ -92,6 +100,16 @@ def move_object(target_object, target_location, controller, event):
             if event.metadata["lastActionSuccess"]:
                 break
         err.append(event.metadata["errorMessage"])
+    elif "pan" in target_location.lower() or "plate" in target_location.lower():
+        location = [o for o in event.metadata["objects"] if target_location in o['objectId'].lower()][0]
+        poses = [{'objectName':o['name'], "position":o['position'], "rotation": o['rotation']} for o in event.metadata['objects'] if not o['objectId'] == obj['objectId']]
+        if "bread" in target_object.lower() or "potato" in target_object.lower():
+            poses.append({'objectName':obj['name'], "position":{'x': location['position']['x'], 'y': location['position']['y'] + 0.2, 'z': location['position']['z']}, "rotation": {"y":0, "x":90, "z":0}})
+        else:
+            poses.append({'objectName':obj['name'], "position":{'x': location['position']['x'], 'y': location['position']['y'] + 0.2 , 'z': location['position']['z']}})
+        event = controller.step('SetObjectPoses',objectPoses = poses, placeStationary=False)
+        for _ in range(10):
+            event = no_op(controller)
     else:
         event = controller.step(
             action="PickupObject",
@@ -107,6 +125,9 @@ def move_object(target_object, target_location, controller, event):
             placeStationary=True
         )
         err.append(event.metadata["errorMessage"])
+    if auto_open:
+        if location["openable"] and not location["isOpen"]:
+            event = close(location['objectId'], controller, event)
 
     # event = controller.step(
     #         action="PickupObject",
@@ -137,16 +158,17 @@ def move_object(target_object, target_location, controller, event):
     #         if event.metadata["lastActionSuccess"]:
     #             break
     #     err.append(event.metadata["errorMessage"])
-    
-    event = move(location['objectId'], controller, event)
-    err.append(event.metadata["errorMessage"])
+    if follow:
+        event = move(target_object, controller, event)
+        err.append(event.metadata["errorMessage"])
     if any(err):
         print(err)
     event = no_op(controller)
     return event
 
 def open(openable, controller, event):
-    obj = [obj for obj in event.metadata["objects"] if openable.lower() in obj['objectId'].lower()][0]
+    # obj = [obj for obj in event.metadata["objects"] if openable.lower() in obj['objectId'].lower()][0]
+    obj = sorted([obj for obj in event.metadata["objects"] if openable.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[0]
     assert obj['openable'] == True, f"{obj['objectId']} has to be openable"
     event = controller.step(
         action="OpenObject",
@@ -157,22 +179,26 @@ def open(openable, controller, event):
     return event
 
 # Not used in this project
-# def close(openable, controller, event):
-#     obj = [obj for obj in event.metadata["objects"] if openable in obj['objectId']][0]
-#     assert obj['openable'] == True, f"{obj['objectId']} has to be openable"
-#     event = controller.step(
-#         action="CloseObject",
-#         objectId=obj['objectId'],
-#         forceAction=True
-#     )
-#     return event
+def close(openable, controller, event):
+    # obj = [obj for obj in event.metadata["objects"] if openable in obj['objectId']][0]
+    obj = sorted([obj for obj in event.metadata["objects"] if openable.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[0]
+    assert obj['openable'] == True, f"{obj['objectId']} has to be openable"
+    event = controller.step(
+        action="CloseObject",
+        objectId=obj['objectId'],
+        forceAction=True
+    )
+    return event
 
 def turn_on(toggleable, controller, event):
     full_name_dict = {
         "stoveburner": "stoveknob"
     }
     toggleable = full_name_dict[toggleable] if toggleable in full_name_dict else toggleable
-    obj = [obj for obj in event.metadata["objects"] if toggleable.lower() in obj['objectId'].lower()][0]
+    idx = 0 if toggleable=="stoveknob" else 0
+    # obj = [obj for obj in event.metadata["objects"] if toggleable.lower() in obj['objectId'].lower()][idx]
+    obj = sorted([obj for obj in event.metadata["objects"] if toggleable.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[idx]
+
     assert obj['toggleable'] == True, f"{obj['objectId']} has to be toggleable"
     event = controller.step(
         action="ToggleObjectOn",
@@ -188,7 +214,18 @@ def empty_liquid(pourable, controller, event):
     event = controller.step(
         action="EmptyLiquidFromObject",
         objectId=obj['objectId'],
-        forceAction=False
+        forceAction=True
+    )
+    return event
+
+def fill_liquid(pourable, controller, event):
+    obj = [obj for obj in event.metadata["objects"] if pourable.lower() in obj['objectId'].lower()][0]
+    assert obj['canFillWithLiquid'] == True, f"{obj['objectId']} has to be fillable with liquid"
+    event = controller.step(
+        action="FillObjectWithLiquid",
+        objectId=obj['objectId'],
+        fillLiquid="wine",
+        forceAction=True
     )
     return event
 
@@ -232,27 +269,20 @@ def dirty(dirtyable, controller, event):
     )
     return event
 
-# def cook(cookable, controller, event):
-#     pass
-
 def make_omelet(egg, potato, bread, plate, controller, event):
     "Rearrange egg, bread, and potato in the plate"
     objects = event.metadata['objects']
     plate = [obj for obj in event.metadata["objects"] if plate in obj['objectId'].lower()][0]
-    assert "bread" in bread and any(['BreadSliced' in o['objectId'] for o in objects])
-    bread = [o for o in event.metadata["objects"] if "BreadSliced".lower() in o['objectId'].lower()][1]
+    # no bread in omelet
+    # assert "bread" in bread and any(['BreadSliced' in o['objectId'] for o in objects])
+    # bread = [o for o in event.metadata["objects"] if "BreadSliced".lower() in o['objectId'].lower()][1]
     assert "potato" in potato and any(['PotatoSliced' in o['objectId'] for o in objects])
     potato = [o for o in event.metadata["objects"] if "PotatoSliced".lower() in o['objectId'].lower()][1] # to avoid the larger chunk of potato slice...
     assert "egg" in egg and any(['EggCracked' in o['objectId'] for o in objects])
     egg = [o for o in event.metadata["objects"] if "EggCracked".lower() in o['objectId'].lower()][0]
     
     # bread first, then egg, and potato on top
-    poses = [{'objectName':obj['name'], "position":obj['position'], "rotation": obj['rotation']} for obj in event.metadata['objects'] if not any([obj['name'] == o['name'] for o in [egg, bread, potato]])]
-    poses.append({'objectName':bread['name'], "position":{'x': plate['position']['x'], 'y': plate['position']['y'] + 0.1, 'z': plate['position']['z']}, "rotation": {"y":270, "x":270, "z":270}})
-    poses.append({'objectName':egg['name'], "position":{'x': plate['position']['x'], 'y': plate['position']['y'] + 0.2 , 'z': plate['position']['z']}})
-    poses.append({'objectName':potato['name'], "position":{'x': plate['position']['x'], 'y': plate['position']['y'] + 0.3, 'z': plate['position']['z']}, "rotation": {"y":0, "x":90, "z":0}})
-    event = controller.step('SetObjectPoses',objectPoses = poses, placeStationary=False)
-    event = move("plate", controller, event)
-    for _ in range(10):
-        event = no_op(controller)
+    poses = [{'objectName':obj['name'], "position":obj['position'], "rotation": obj['rotation']} for obj in event.metadata['objects'] if not any([obj['name'] == o['name'] for o in [egg, potato]])]
+    # poses.append({'objectName':bread['name'], "position":{'x': plate['position']['x'], 'y': plate['position']['y'] + 0.1, 'z': plate['position']['z']}, "rotation": {"y":270, "x":270, "z":270}})
+
     return event

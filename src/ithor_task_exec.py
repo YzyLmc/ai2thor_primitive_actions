@@ -4,10 +4,47 @@ from inspect import getmembers, isfunction, signature
 import sys
 import ithor_skills
 
-skills = ['move', 'move_object', 'open', 'close', 'turn_on', 'empty_liquid', 'slice', 'crack', 'clean', 'make_omelet']
-def convert_task_to_code(commands):
-    'task: str: sequence of commands separate by \n'
-    template = '''
+def initialize_env(predicate_dict):
+    "Modified the environment so it satisfied the predicate specifications"
+    "This function will return multiple lines of python code in string to be inserted after the main template"
+    predicates = {
+        "at-location": "move_object", 
+        "is-full": "fill_liquid", 
+        "is-sliced": "slice", 
+        # "is-cracked",
+        "is-clean": "dirty", 
+        # "is-closed": "open", 
+        "is-on": "turn_on"
+        }
+    
+    commands = []
+    # process the dictionary
+    for prefix, value in predicate_dict.items():
+        try:
+            val_0, pred = prefix.split('_')
+        except:
+            continue
+        # tricky if-else logic handles different predicates
+        if pred in predicates:
+            if pred == "at-location": # the only predicate takes two arguments
+                if val_0.lower() == "robot": 
+                    command = f'event = move("{value}", controller, event)'
+                else:
+                    command = f'event = {predicates[pred]}("{val_0}", "{value}", controller, event, follow=False, auto_open=True)'
+                commands.append(command)
+            else: # unary predicates
+                value = not value if pred == "is-clean" else value # mapping from 'is-clean' to 'dirty' is reversed
+                if value:
+                    command = f'event = {predicates[pred]}("{val_0}", controller, event)'
+                    commands.append(command)
+    return commands
+
+def convert_task_to_code(task_name, task):
+    'task: {"initial_state":dict, "plan":list}'
+    initial_state = task["initial_state"]
+    commands = task["plan"]
+    
+    template = f'''
 import numpy as np
 import random
 import os
@@ -19,7 +56,7 @@ from ithor_skills import *
 
 def capture_obs(controller, file_prefix):
     counter = 1
-    directory = f"plans/test/"
+    directory = f"plans/{task_name}/"
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -29,12 +66,12 @@ def capture_obs(controller, file_prefix):
         counter = max(nums) + 1
     else:
         counter = 0
-    screenshot_path = f"{counter}_{file_prefix}.jpg"
+    screenshot_path = f"{{counter}}_{{file_prefix}}.jpg"
     event = controller.step('Pass')
     im = Image.fromarray(event.frame)
-    im.save(f"{directory}{counter}_{file_prefix}.jpg")
-    print(f"Screenshot saved to {counter}_{file_prefix}.jpg")
-    return f"{directory}{counter}_{file_prefix}.jpg"
+    im.save(f"{{directory}}{{counter}}_{{file_prefix}}.jpg")
+    print(f"Screenshot saved to {{counter}}_{{file_prefix}}.jpg")
+    return f"{{directory}}{{counter}}_{{file_prefix}}.jpg"
 
 # init ai2thor controller
 controller = Controller(
@@ -48,22 +85,17 @@ controller = Controller(
     renderObjectImage = True,
     width= 1080,
     height= 1080,
-    fieldOfView=90
+    fieldOfView=100
             )
 event = no_op(controller)
-
-event = move_object('pan','stoveburner', controller, event)
-event = move_object('plate','countertop', controller, event)
-event = move_object('mug','sink', controller, event)
-event = dirty('mug', controller, event)
-
-
-event = move("drawer", controller, event)
 '''
     # skill_list = [a[0] for a in getmembers(sys.modules['ithor_skills'], isfunction)]
     skill_list = {a[0]:a[1] for a in getmembers(sys.modules['ithor_skills'], isfunction)}
 
-    formatted_commands = []
+    init_env = initialize_env(initial_state)
+    init_env_code = "\n".join(init_env)
+
+    formatted_commands = ["\n"]
     
     commands = [c[1:-1].replace("-", "_") for c in commands] # remove brackets
     for command in commands:
@@ -88,47 +120,144 @@ event = move("drawer", controller, event)
 
 
     formatted_code = "\n".join(formatted_commands)
-    return template + formatted_code
+    return template + init_env_code + formatted_code
 
 if __name__ == "__main__":
-    task = [
-        "(open robot drawer)",
-        "(move-object robot dishsponge sink)",
-        "(move-object robot knife countertop)",
+    # commands = [
+    #     "(open robot drawer)",
+    #     "(move-object robot dishsponge sink)",
+    #     "(move-object robot knife countertop)",
+    #     "(move robot cabinet)",
+    #     "(open robot cabinet)",
+    #     "(move-object robot bread countertop)",
+    #     "(move-object robot potato countertop)",
+    #     "(slice robot potato countertop knife)",
+    #     "(slice robot bread countertop knife)",
+    #     "(move-object robot bread toaster)",
+    #     "(turn-on robot toaster)",
+    #     "(toast-bread robot bread toaster)",
+    #     "(move robot faucet)",
+    #     "(turn-on robot faucet)",
+    #     "(move robot fridge)",
+    #     "(open robot fridge)",
+    #     "(move robot sink)",
+    #     "(clean robot mug sink dishsponge faucet)",
+    #     "(move-object robot mug coffeemachine)",
+    #     "(turn-on robot coffeemachine)",
+    #     "(make-coffee robot coffeemachine mug)",
+    #     "(move-object robot bread plate)",
+    #     "(move-object robot egg pan)",
+    #     "(move-object robot potato pan)",
+    #     "(move robot stoveburner)",
+    #     "(turn-on robot stoveburner)",
+    #     "(cook-potato robot potato pan stoveburner)",
+    #     "(crack-egg robot egg pan stoveburner)",
+    #     "(cook-egg robot egg pan stoveburner)",
+    #     "(move-object robot egg plate)",
+    #     "(move-object robot potato plate)",
+    #     "(move robot countertop)",
+    #     "(make-omelet robot egg potato bread plate countertop)",
+    #     "(make-toast robot bread plate countertop)",
+    #     "(make-breakfast )",
+    # ]
+    commands = [
         "(move robot cabinet)",
         "(open robot cabinet)",
-        "(move-object robot bread countertop)",
-        "(move-object robot potato countertop)",
-        "(slice robot potato countertop knife)",
-        "(slice robot bread countertop knife)",
-        "(move-object robot bread toaster)",
-        "(turn-on robot toaster)",
-        "(toast-bread robot bread toaster)",
-        "(move robot faucet)",
-        "(turn-on robot faucet)",
+        "(move robot countertop)",
+        "(move robot sink)",
         "(move robot fridge)",
         "(open robot fridge)",
+        "(move robot drawer)",
+        "(open robot drawer)",
+        # "(move-object robot bread toaster)",
+        "(move robot faucet)",
+        "(turn-on robot faucet)",
         "(move robot sink)",
+        "(empty-liquid robot mug sink)",
         "(clean robot mug sink dishsponge faucet)",
         "(move-object robot mug coffeemachine)",
+        "(move robot coffeemachine)",
         "(turn-on robot coffeemachine)",
         "(make-coffee robot coffeemachine mug)",
-        "(move-object robot bread plate)",
         "(move-object robot egg pan)",
+        "(move-object robot knife countertop)",
+        "(move-object robot potato countertop)",
+        "(move robot countertop)",
+        "(slice robot potato countertop knife)",
         "(move-object robot potato pan)",
         "(move robot stoveburner)",
-        "(turn-on robot stoveburner)",
-        "(cook-potato robot potato pan stoveburner)",
         "(crack-egg robot egg pan stoveburner)",
+        "(turn-on robot stoveburner)",
         "(cook-egg robot egg pan stoveburner)",
-        "(move-object robot egg plate)",
+        "(cook-potato robot potato pan stoveburner)",
         "(move-object robot potato plate)",
+        "(move-object robot egg plate)",
         "(move robot countertop)",
         "(make-omelet robot egg potato bread plate countertop)",
+        "(move-object robot bread countertop)",
+        "(move robot countertop)",
+        "(slice robot bread countertop knife)",
+        "(move-object robot bread toaster)",
+        "(move robot toaster)",
+        "(turn-on robot toaster)",
+        "(toast-bread robot bread toaster)",
+        "(move-object robot bread plate)",
+        "(move robot countertop)",
         "(make-toast robot bread plate countertop)",
-        "(make-breakfast )",
+        "(make-breakfast )"
     ]
-    generated_code = convert_task_to_code(task)
+    initial_state = {
+        "Robot_at-location": "Shelf",
+        "Knife_at-location": "Sink",
+        "DishSponge_at-location": "Sink",
+        "Egg_at-location": "Fridge",
+        "Mug_at-location": "Sink",
+        "Bread_at-location": "Shelf",
+        "Potato_at-location": "Fridge",
+        "coffee-made": False,
+        "omelet-made": False,
+        "toast-made": False,
+        "breakfast-made": False,
+        "Mug_is-full": True,
+        "Bread_is-cooked": False,
+        "Potato_is-cooked": False,
+        "Egg_is-cooked": False,
+        "Bread_is-sliced": False,
+        "Potato_is-sliced": False,
+        "Egg_is-cracked": False,
+        "Mug_is-cracked": False,
+        "Mug_is-clean": False,
+        "Knife_is-clean": True,
+        "Cabinet_is-closed": True,
+        "Drawer_is-closed": True,
+        "CounterTop_is-closed": False,
+        "StoveBurner_is-closed": False,
+        "Shelf_is-closed": False,
+        "Sink_is-closed": False,
+        "Fridge_is-closed": True,
+        "Toaster_is-closed": False,
+        "CoffeeMachine_is-closed": False,
+        "Faucet_is-closed": False,
+        "Microwave_is-closed": True,
+        "Pan_is-closed": False,
+        "Plate_is-closed": False,
+        "Toaster_is-on": False,
+        "CoffeeMachine_is-on": False,
+        "Faucet_is-on": False,
+        "StoveBurner_is-on": False,
+        "Microwave_is-on": False,
+        "Knife_reachable": True,
+        "DishSponge_reachable": True,
+        "Egg_reachable": False,
+        "Mug_reachable": True,
+        "Bread_reachable": True,
+        "Potato_reachable": False,
+        "Plate_at-location": "CounterTop",
+        "Pan_at-location": "StoveBurner"
+    }
+    task = {"initial_state":initial_state, "plan": commands}
+    task_name = "test_1"
+    generated_code = convert_task_to_code(task_name, task)
     print(generated_code)
     breakpoint()
     exec(generated_code)
