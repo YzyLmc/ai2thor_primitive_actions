@@ -28,14 +28,14 @@ def initialize_env(predicate_dict):
         if pred in predicates:
             if pred == "at-location": # the only predicate takes two arguments
                 if val_0.lower() == "robot": 
-                    command = f'event = move("{value}", controller, event)'
+                    command = f'event, _ = move("{value}", controller, event)'
                 else:
-                    command = f'event = {predicates[pred]}("{val_0}", "{value}", controller, event, follow=False, auto_open=True)'
+                    command = f'event, _ = {predicates[pred]}("{val_0}", "{value}", controller, event, follow=False, auto_open=True)'
                 commands.append(command)
             else: # unary predicates
                 value = not value if pred == "is-clean" else value # mapping from 'is-clean' to 'dirty' is reversed
                 if value:
-                    command = f'event = {predicates[pred]}("{val_0}", controller, event)'
+                    command = f'event, _ = {predicates[pred]}("{val_0}", controller, event)'
                     commands.append(command)
     return commands
 
@@ -109,14 +109,14 @@ event = no_op(controller)
                 params = args[2:len(sig.parameters)]
                 params_str = ",".join([f"'{p}'" for p in params])
                 function_str = f"{skill_name}({params_str}, controller, event)"
-                formatted_command = f'event = {function_str}'
+                formatted_command = f'event, time = {function_str}'
 
                 formatted_commands.append(formatted_command)
-                formatted_commands.append(f'screenshot_path = capture_obs(controller, "{command}")')
+                formatted_commands.append(f'screenshot_path = capture_obs(controller, f"{command}_{{time}}")')
                 executable = True
                 break
         if not executable:
-            formatted_commands.append(f'screenshot_path = capture_obs(controller, "{command}")')
+            formatted_commands.append(f'screenshot_path = capture_obs(controller, "{command}_0")')
 
 
     formatted_code = "\n".join(formatted_commands)

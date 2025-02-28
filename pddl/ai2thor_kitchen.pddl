@@ -131,7 +131,7 @@
     )
 
     (:action clean
-        :parameters (?r - Robot ?d - dirtyable ?s - sink ?ds - DishSponge ?f - Faucet)
+        :parameters (?r - Robot ?d - dirtyable ?s - Sink ?ds - DishSponge ?f - Faucet)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the sink
             (at-location ?d ?s) ; the dirty object is at the sink
@@ -163,7 +163,7 @@
             (is-full ?i) ; the item is full
         )
         :effect (and
-            (not (is-full ?i)) 
+            (not (is-full ?i))
             (not (is-clean ?i))  ; the item is not full and clean
         )
     )

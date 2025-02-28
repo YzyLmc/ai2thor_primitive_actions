@@ -10,6 +10,13 @@ def no_op(controller):
     event = controller.step('Pass')
     return event
 
+def step_time(controller, event):
+    "simulate time moving forward by one step"
+    start_time = event.metadata['currentTime']
+    event = controller.step('Pass')
+    end_time = event.metadata['currentTime']
+    return end_time - start_time
+
 def move(object_or_location, controller, event):
     '''
     Move to a place interactable with the target object/location by teleporting through a trajectory
@@ -54,12 +61,13 @@ def move(object_or_location, controller, event):
 
     event = controller.step('Pass')
     # success = dist_pose(event.metadata['agent']['position'], obj['position']) < 2
-    return event
+    return event, step_time(controller, event)
 
 def move_object(target_object, target_location, controller, event, follow=True, auto_open=False):
     "Handle edge cases by hardcoding if needed. Now is just regular pick & place"
     "follow :bool: if robot will be ended up at the same location as the object"
     # hardcode some mapping from abbrevs to full name
+    t = 0 # timing
     full_name_dict = {
         "sink": "sinkbasin"
     }
@@ -83,7 +91,7 @@ def move_object(target_object, target_location, controller, event, follow=True, 
     err = []
     if auto_open:
         if location["openable"] and not location["isOpen"]:
-            event = open(location['objectId'], controller, event)
+            event, _ = open(location['objectId'], controller, event)
     if "shelf" in target_location.lower():
         event = controller.step(
             action="GetSpawnCoordinatesAboveReceptacle",
@@ -125,6 +133,7 @@ def move_object(target_object, target_location, controller, event, follow=True, 
             placeStationary=True
         )
         err.append(event.metadata["errorMessage"])
+    t += step_time(controller, event)
     if auto_open:
         if location["openable"] and not location["isOpen"]:
             event = close(location['objectId'], controller, event)
@@ -159,12 +168,13 @@ def move_object(target_object, target_location, controller, event, follow=True, 
     #             break
     #     err.append(event.metadata["errorMessage"])
     if follow:
-        event = move(target_object, controller, event)
+        event, t_move = move(target_object, controller, event)
+        t == t_move
         err.append(event.metadata["errorMessage"])
     if any(err):
         print(err)
     event = no_op(controller)
-    return event
+    return event, t
 
 def open(openable, controller, event):
     # obj = [obj for obj in event.metadata["objects"] if openable.lower() in obj['objectId'].lower()][0]
@@ -176,7 +186,7 @@ def open(openable, controller, event):
         openness=1,
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 # Not used in this project
 def close(openable, controller, event):
@@ -188,7 +198,7 @@ def close(openable, controller, event):
         objectId=obj['objectId'],
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def turn_on(toggleable, controller, event):
     full_name_dict = {
@@ -206,7 +216,7 @@ def turn_on(toggleable, controller, event):
         forceAction=True
     )
 
-    return event
+    return event, step_time(controller, event)
 
 def empty_liquid(pourable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if pourable.lower() in obj['objectId'].lower()][0]
@@ -216,7 +226,7 @@ def empty_liquid(pourable, controller, event):
         objectId=obj['objectId'],
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def fill_liquid(pourable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if pourable.lower() in obj['objectId'].lower()][0]
@@ -227,7 +237,7 @@ def fill_liquid(pourable, controller, event):
         fillLiquid="wine",
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def slice(sliceable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if sliceable.lower() in obj['objectId'].lower()][0]
@@ -237,7 +247,7 @@ def slice(sliceable, controller, event):
         objectId=obj['objectId'],
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def crack_egg(egg, controller, event):
     obj = [obj for obj in event.metadata["objects"] if egg.lower() in obj['objectId'].lower()][0]
@@ -247,7 +257,7 @@ def crack_egg(egg, controller, event):
         objectId=obj['objectId'],
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def clean(dirtyable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if dirtyable.lower() in obj['objectId'].lower()][0]
@@ -257,7 +267,7 @@ def clean(dirtyable, controller, event):
         objectId=obj['objectId'],
         forceAction=True
     )
-    return event
+    return event, step_time(controller, event)
 
 def dirty(dirtyable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if dirtyable.lower() in obj['objectId'].lower()][0]
@@ -267,7 +277,7 @@ def dirty(dirtyable, controller, event):
         objectId=obj['objectId'],
         forceAction=False
     )
-    return event
+    return event, step_time(controller, event)
 
 def make_omelet(egg, potato, bread, plate, controller, event):
     "Rearrange egg, bread, and potato in the plate"
@@ -285,4 +295,4 @@ def make_omelet(egg, potato, bread, plate, controller, event):
     poses = [{'objectName':obj['name'], "position":obj['position'], "rotation": obj['rotation']} for obj in event.metadata['objects'] if not any([obj['name'] == o['name'] for o in [egg, potato]])]
     # poses.append({'objectName':bread['name'], "position":{'x': plate['position']['x'], 'y': plate['position']['y'] + 0.1, 'z': plate['position']['z']}, "rotation": {"y":270, "x":270, "z":270}})
 
-    return event
+    return event, step_time(controller, event)
