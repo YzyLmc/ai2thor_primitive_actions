@@ -5,11 +5,16 @@
 
     (:types
         Robot location item - object
-        Cabinet Drawer CounterTop StoveBurner Shelf Sink Fridge Toaster CoffeeMachine Faucet Microwave Pan Plate - location
+        CounterTop StoveBurner Shelf Sink Fridge Faucet Microwave Pan Plate appliance - location
         Knife Bottle DishSponge Egg Mug Bread Potato - item
-        Drawer Cabinet Fridge Microwave - openable
-        Toaster CoffeeMachine - container
-        Cabinet CounterTop StoveBurner Shelf Sink Pan Plate - receptacle
+        Apple CreditCard Lettuce PepperShaker Tomato - item
+        Toaster CoffeeMachine - appliance
+        Fridge Microwave - openable
+        Cabinet1 Cabinet2 Cabinet3 - location
+        Drawer1 Drawer2 Drawer3 Drawer4 - location
+        Cabinet1 Cabinet2 Cabinet3 - openable
+        Drawer1 Drawer2 Drawer3 Drawer4 - openable
+        CounterTop StoveBurner Shelf Sink Pan Plate - receptacle
         Toaster CoffeeMachine Faucet StoveBurner Microwave - toggleable
         Egg Mug - crackable
         Mug Bottle - dirtyable
@@ -19,7 +24,8 @@
     )
     (:predicates
         ; tracking cookable separately since there are prerequisites for egg and bread
-		(at-location ?r - object ?l - location)
+		(at-location ?r - Robot ?l - location)
+		(item-at ?i - item ?l - location)
         (is-closed ?o - location)
         (in-closed-container ?i - item ?l - location) ; an object is reachable if it's in a closed openable object
         (is-on ?t - toggleable)
@@ -37,7 +43,7 @@
     (:action move
         :parameters (?r - Robot ?to - location)
         :precondition ()
-                ; (not (at-location ?r ?to))
+                ; (not (item-at ?r ?to))
         :effect (and
             (forall
                 (?j - location)
@@ -77,22 +83,48 @@
             (forall
                 (?j - location)
                 (and
-                    (not (at-location ?i ?j))
+                    (not (item-at ?i ?j))
                     (not (at-location ?r ?j))
                 )
             )
             ; the robot is now at the location with the object:
-            ; (at-location ?r ?l)
-            (at-location ?i ?l)
+            (at-location ?r ?l)
+            (item-at ?i ?l)
         )
     )
+
+    (:action put-bread-in-toaster
+        :parameters (?r - Robot ?b - Bread ?t - Toaster)
+        :precondition (and
+            ; the object being moved is not in a closed container (it is accessible)
+            (forall
+                (?j - location)
+                (not (in-closed-container ?b ?j))
+            )
+            (is-sliced ?b)
+            (not (is-on ?t)) ; the toaster is not on
+        )
+        :effect (and
+            (forall
+                (?j - location)
+                (and
+                    (not (item-at ?b ?j))
+                    (not (at-location ?r ?j))
+                )
+            )
+            ; the robot is now at the location with the object:
+            (at-location ?r ?t)
+            (item-at ?b ?t)
+        )
+    )
+
 
     (:action make-toast
         :parameters (?r - Robot ?b - Bread ?p - Plate ?c - CounterTop)
         :precondition (and
             (at-location ?r ?c) ; the robot is at the countertop
-            (at-location ?p ?c) ; the plate is at the countertop
-            (at-location ?b ?p) ; the bread is on the plate
+            (item-at ?p ?c) ; the plate is at the countertop
+            (item-at ?b ?p) ; the bread is on the plate
             (is-cooked ?b) ; the bread is toasted
             ; (not (toast-made)) ; the toast has not been made
         )
@@ -103,8 +135,8 @@
         :parameters (?r - Robot ?s - sliceable ?t - CounterTop ?k - Knife)
         :precondition (and
             (at-location ?r ?t) ; the robot is at the countertop
-            (at-location ?s ?t) ; the item is on the countertop
-            (at-location ?k ?t) ; the knife is on the countertop
+            (item-at ?s ?t) ; the item is on the countertop
+            (item-at ?k ?t) ; the knife is on the countertop
             ; (not (is-sliced ?s)) ; the item has not been sliced
         )
         :effect (is-sliced ?s) ; the item is sliced
@@ -114,7 +146,7 @@
         :parameters (?r - Robot ?b - Bread ?t - Toaster)
         :precondition (and
             (at-location ?r ?t) ; the robot is at the toaster
-            (at-location ?b ?t) ; the bread is in the toaster
+            (item-at ?b ?t) ; the bread is in the toaster
             (is-sliced ?b) ; the bread is sliced
             (is-on ?t) ; the toaster is on
         )
@@ -125,7 +157,7 @@
         :parameters (?r - Robot ?t - toggleable)
         :precondition (and
             (at-location ?r ?t) ; the robot is at the toggleable object
-            ; (not (is-on ?t)) ; the object is not on
+            (not (is-on ?t)) ; the object is not on
         )
         :effect (is-on ?t) ; the object is now turned on
     )
@@ -134,19 +166,45 @@
         :parameters (?r - Robot ?d - dirtyable ?s - Sink ?ds - DishSponge ?f - Faucet)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the sink
-            (at-location ?d ?s) ; the dirty object is at the sink
-            (at-location ?ds ?s) ; the sponge is at the sink
+            (item-at ?d ?s) ; the dirty object is at the sink
+            (item-at ?ds ?s) ; the sponge is at the sink
             (is-on ?f) ; the faucet is on
             ; (not (is-clean ?d)) ; the dirty object is not clean
         )
         :effect (is-clean ?d) ; the dirty object is clean
     )
 
+    (:action put-mug-in-machine
+        :parameters (?r - Robot ?m - Mug ?c - CoffeeMachine)
+        :precondition (and
+            ; the object being moved is not in a closed container (it is accessible)
+            (forall
+                (?j - location)
+                (not (in-closed-container ?m ?j))
+            )
+            (is-clean ?m) ; the mug is clean
+            (not (is-full ?m)) ; the mug is not full
+            (not (is-on ?c)) ; the coffee machine is not on
+        )
+        :effect (and
+            (forall
+                (?j - location)
+                (and
+                    (not (item-at ?m ?j))
+                    (not (at-location ?r ?j))
+                )
+            )
+            ; the robot is now at the location with the object:
+            (item-at ?m ?c)
+            (at-location ?r ?c)
+        )
+    )
+
     (:action make-coffee
         :parameters (?r - Robot ?c - CoffeeMachine ?m - Mug)
         :precondition (and
             (at-location ?r ?c) ; the robot is at the coffee machine
-            (at-location ?m ?c) ; the mug is in the coffee machine
+            (item-at ?m ?c) ; the mug is in the coffee machine
             ; (not (coffee-made)) ; coffee has not been made
             (is-clean ?m) ; the mug is clean
             (not (is-full ?m)) ; the mug is not full
@@ -159,7 +217,7 @@
         :parameters (?r - Robot ?i - pourable ?s - Sink)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the sink
-            (at-location ?i ?s) ; the item is at the sink
+            (item-at ?i ?s) ; the item is at the sink
             (is-full ?i) ; the item is full
         )
         :effect (and
@@ -172,8 +230,8 @@
         :parameters (?r - Robot ?po - Potato ?p - Pan ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the stove
-            (at-location ?p ?s) ; the pan is on the stove
-            (at-location ?po ?p) ; the potato is on the pan
+            (item-at ?p ?s) ; the pan is on the stove
+            (item-at ?po ?p) ; the potato is on the pan
             (is-sliced ?po) ; the potato is sliced
             (is-on ?s) ; the stove is turned on
             ; (not (is-cooked ?p)) ; the potato is not cooked
@@ -185,8 +243,8 @@
         :parameters (?r - Robot ?e - Egg ?p - Pan ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the stove
-            (at-location ?p ?s) ; the pan is on the stove
-            (at-location ?e ?p) ; the egg is at the pan
+            (item-at ?p ?s) ; the pan is on the stove
+            (item-at ?e ?p) ; the egg is at the pan
             ; (not (is-cracked ?e)) ; the egg is not cracked
         )
         :effect (is-cracked ?e) ; the egg is cracked
@@ -196,8 +254,8 @@
         :parameters (?r - Robot ?e - Egg ?p - Pan ?s - StoveBurner)
         :precondition (and
             (at-location ?r ?s) ; the robot is at the stove
-            (at-location ?p ?s) ; the pan is on the stove
-            (at-location ?e ?p) ; the egg is at the pan
+            (item-at ?p ?s) ; the pan is on the stove
+            (item-at ?e ?p) ; the egg is at the pan
             (is-cracked ?e) ; the egg is cracked
             (is-on ?s) ; the stove is turned on
             ; (not (is-cooked ?e)) ; the egg is not cooked
@@ -206,13 +264,12 @@
     )
 
     (:action make-omelet
-        :parameters (?r - Robot ?e - Egg ?po - Potato ?b - bread ?p - Plate ?c - CounterTop)
+        :parameters (?r - Robot ?e - Egg ?po - Potato ?p - Plate ?c - CounterTop)
         :precondition (and
             (at-location ?r ?c) ; the robot is at the countertop
-            (at-location ?p ?c) ; the plate is at the countertop
-            (at-location ?e ?p) ; the egg is on the plate
-            (at-location ?po ?p) ; the potato is on the plate
-            ; (at-location ?b ?p) ; the bread is on the plate
+            (item-at ?p ?c) ; the plate is at the countertop
+            (item-at ?e ?p) ; the egg is on the plate
+            (item-at ?po ?p) ; the potato is on the plate
             (is-cooked ?e) ; the egg is cooked
             (is-cooked ?po) ; the potato is cooked
             ; (is-cooked ?b) ; the bread is toasted
