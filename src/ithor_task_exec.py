@@ -5,6 +5,7 @@ import sys
 import os
 import argparse
 import json
+import logging
 
 import ithor_skills
 
@@ -22,7 +23,7 @@ def initialize_env(predicate_dict):
         }
     
     commands = []
-    commands.append('event, _ = move("tomato", controller, event)')
+    # commands.append('event, _ = move("tomato", controller, event)')
     # process the dictionary
     robot_nav_command = None
     for prefix, value in predicate_dict.items():
@@ -38,6 +39,7 @@ def initialize_env(predicate_dict):
                     command = ""
                 else:
                     val_0 = "saltshaker" if val_0.lower() == "lettuce" else val_0
+                    val_0 = "butterknife" if val_0.lower() == "knife" else val_0
                     command = f'event, _ = {predicates[pred]}("{val_0}", "{value}", controller, event, follow=False, auto_open=True)'
                 commands.append(command)
             else: # unary predicates
@@ -49,7 +51,7 @@ def initialize_env(predicate_dict):
         commands.append(robot_nav_command)
     return commands
 
-def convert_task_to_code(task_name, task, save_dir="plans"):
+def convert_task_to_code(task_name, task, save_dir="plans", no_img_log=False):
     'task: {"initial_state":dict, "plan":list}'
     initial_state = task["initial_state"]
     commands = task["plan"]
@@ -64,7 +66,7 @@ from ai2thor.controller import Controller
 from ai2thor.platform import CloudRendering
 from ithor_skills import *
 
-def capture_obs(controller, file_prefix):
+def capture_obs(controller, file_prefix, no_img_log):
     import os
     from PIL import Image
     counter = 1
@@ -82,7 +84,8 @@ def capture_obs(controller, file_prefix):
     event = controller.step('Pass')
     im = Image.fromarray(event.frame)
     im.save(f"{{directory}}{{counter}}_{{file_prefix}}.jpg")
-    print(f"Screenshot saved to {{counter}}_{{file_prefix}}.jpg")
+    if not no_img_log:
+        logging.info(f"Screenshot saved to {{counter}}_{{file_prefix}}.jpg")
     return f"{{directory}}{{counter}}_{{file_prefix}}.jpg"
 
 # init ai2thor controller
@@ -104,6 +107,12 @@ event = no_op(controller)
 for obj in [obj for obj in event.metadata["objects"] if 'WineBottle' in obj['objectId']]:
     event = controller.step('RemoveFromScene', objectId=obj["objectId"])
 
+for obj in [obj for obj in event.metadata["objects"] if 'Kettle' in obj['objectId']]:
+    event = controller.step('RemoveFromScene', objectId=obj["objectId"])
+
+for obj in [obj for obj in event.metadata["objects"] if 'Stool' in obj['objectId']]:
+    event = controller.step('RemoveFromScene', objectId=obj["objectId"])
+
 '''
     # skill_list = [a[0] for a in getmembers(sys.modules['ithor_skills'], isfunction)]
     skill_list = {a[0]:a[1] for a in getmembers(sys.modules['ithor_skills'], isfunction)}
@@ -111,7 +120,7 @@ for obj in [obj for obj in event.metadata["objects"] if 'WineBottle' in obj['obj
     init_env = initialize_env(initial_state)
     init_env_code = "\n".join(init_env)
 
-    formatted_commands = ["\n"]
+    formatted_commands = ["\n", f'screenshot_path = capture_obs(controller, f"init_$0$", no_img_log={no_img_log})']
     
     commands = [c[1:-1].replace("-", "_") for c in commands] # remove brackets
     for command in commands:
@@ -123,26 +132,57 @@ for obj in [obj for obj in event.metadata["objects"] if 'WineBottle' in obj['obj
                 args = [arg.strip() for arg in args] # first one is always 'robot'
                 sig = signature(function) # signature of the function
                 params = args[2:len(sig.parameters)]
+                params[0] = "saltshaker" if params[0].lower() == "lettuce" else params[0]
+                params[0] = "butterknife" if params[0].lower() == "knife" else params[0]
                 params_str = ",".join([f"'{p}'" for p in params])
                 function_str = f"{skill_name}({params_str}, controller, event)"
                 formatted_command = f'event, time = {function_str}'
 
                 formatted_commands.append(formatted_command)
-                formatted_commands.append(f'screenshot_path = capture_obs(controller, f"{command}_${{time}}$")')
+                formatted_commands.append(f'screenshot_path = capture_obs(controller, f"{command}_${{time}}$", no_img_log={no_img_log})')
                 executable = True
                 break
         if not executable:
-            formatted_commands.append(f'screenshot_path = capture_obs(controller, "{command}_$0$")')
+            formatted_commands.append(f'screenshot_path = capture_obs(controller, "{command}_$0$", no_img_log={no_img_log})')
 
 
     formatted_code = "\n".join(formatted_commands)
     return template + init_env_code + formatted_code + "\ncontroller.stop()"
 
 def main():
+    # save log
+    if not os.path.exists(args.save_directory):
+        os.mkdir(args.save_directory)
+    counter = 0
+    while True:
+            save_path = f"{args.save_directory}/log_raw_results_{counter}.log"
+            if not os.path.exists(save_path):
+                break
+            counter += 1
+    logging.basicConfig(level=logging.INFO,
+                                format='%(message)s',
+                                handlers=[
+                                    logging.FileHandler(save_path, mode='w'),
+                                    logging.StreamHandler()
+                                ]
+            )
+    # while True:
+    #         save_path = f"{args.save_dir}/log_raw_results_{counter}.log"
+    #         if not os.path.exists(save_path):
+    #             break
+    #         counter += 1
+    
     with open(args.json_file_path) as f:
         tasks_all = json.load(f)
+    if args.separate_json:
+        tasks_all = {args.separate_json: tasks_all}
+        # breakpoint()
     for goal, tasks in tasks_all.items():
-        tasks = {k: v for i, (k, v) in enumerate(tasks_all.items()) if i < args.first_n} if args.first_n > 0 else tasks
+        # if not (goal.lower() == "coffee" or goal.lower() == "toast" or goal.lower() == "omelet"): # temp
+        # if goal.lower() == 'coffee':
+        tasks = {k: v for i, (k, v) in enumerate(tasks.items()) if i < args.first_n} if args.first_n > 0 else tasks
+        # tasks = {k: v for i, (k, v) in enumerate(tasks.items()) if i == 49 or i == 48}
+        # breakpoint()
         for task_name, task in tasks.items():
             # separately specify different task name and content from the json file
             # {task_name:{initial_state:dict, plan: {SPOP_PR:list, FD_LOM_PR:list }}}
@@ -151,17 +191,24 @@ def main():
             for method_name in task["plan"].keys():
                 task_name_sub = f"{goal}/{task_name}_{method_name}"
                 task_sub = {"initial_state": task["initial_state"], "plan":task["plan"][method_name]}
-                generated_code = convert_task_to_code(task_name_sub, task_sub, save_dir=args.save_directory)
-                exec(generated_code)
-                # calculate time for each task
-                f_list_task = os.listdir(f"{args.save_directory}/{task_name_sub}")
-                t = sum([float(f.split("$")[1]) for f in f_list_task])
-                os.rename(
-                    f"{args.save_directory}/{task_name_sub}",
-                    f"{args.save_directory}/{task_name_sub}_${round(t, 4)}$"
-                )
-                print(f"{goal}/{task_name}_{method_name} is done.")
-                print(f"total time: {round(t, 4)} sec")
+                generated_code = convert_task_to_code(task_name_sub, task_sub, save_dir=args.save_directory, no_img_log=args.no_img_log)
+                try:
+                    exec(generated_code)
+                    # calculate time for each task
+                    f_list_task = os.listdir(f"{args.save_directory}/{task_name_sub}")
+                    t = sum([float(f.split("$")[1]) for f in f_list_task])
+                    os.rename(
+                        f"{args.save_directory}/{task_name_sub}",
+                        f"{args.save_directory}/{task_name_sub}_${round(t, 4)}$"
+                    )
+                    logging.info(f"{goal}/{task_name}_{method_name} is done.")
+                    logging.info(f"total time: {round(t, 4)} sec")
+                    logging.info("\n")
+                except Exception as error:
+                    logging.info(f"{goal}/{task_name}_{method_name} failed.")
+                    logging.info(f"due to error:\n{error}.")
+                    logging.info("\n")
+
         # calculate time for every goal, e.g., omelet, toast,...
 
         f_list_goal = os.listdir(f"{args.save_directory}/{goal}")
@@ -176,10 +223,10 @@ def main():
             f"{args.save_directory}/{goal}",
             f"{args.save_directory}/{goal}_SPOP_${round(t_SPOP, 4)/(len(f_list_goal)/2)}$_FD_${round(t_FD, 4)/(len(f_list_goal)/2)}$"
         )
-        print(f"{goal} is done.")
-        print(f"On average, SPOP takes {round(t_SPOP, 4)/(len(f_list_goal)/2)}")
-        print(f"On average, FD takes {round(t_FD, 4)/(len(f_list_goal)/2)}")
-        print('\n\n\n')
+        logging.info(f"{goal} is done.")
+        logging.info(f"On average, SPOP takes {round(t_SPOP, 4)/(len(f_list_goal)/2)}")
+        logging.info(f"On average, FD takes {round(t_FD, 4)/(len(f_list_goal)/2)}")
+        logging.info('\n\n')
 
     # count avg time
 
@@ -187,8 +234,10 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--json_file_path", type=str)
-    parser.add_argument("--save_directory", type=str, default="plans/")
+    parser.add_argument("--save_directory", type=str, default="plans")
     parser.add_argument("--first_n", type=int, default=0)
+    parser.add_argument("--no_img_log", action="store_true")
+    parser.add_argument("--separate_json", default=None, choices=["Omelet", "Breakfast", "Coffee", "Toast"])
     args = parser.parse_args()
     main()
     # commands = [
@@ -269,6 +318,6 @@ if __name__ == "__main__":
     # task = {"initial_state":initial_state, "plan": commands}
     # task_name = "test_1"
     # generated_code = convert_task_to_code(task_name, task)
-    # print(generated_code)
+    # logging.info(generated_code)
     # breakpoint()
     # exec(generated_code)

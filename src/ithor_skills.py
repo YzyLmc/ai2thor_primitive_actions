@@ -3,6 +3,8 @@
 import random
 from copy import deepcopy
 import numpy as np
+from copy import deepcopy
+import logging
 
 from ai2thor.util.metrics import get_shortest_path_to_object
 
@@ -13,10 +15,11 @@ def no_op(controller):
 def step_time(controller, event):
     "simulate time moving forward by one step"
     start_time = event.metadata['currentTime']
-    for _ in range(5):
-        event = controller.step('Pass')
+    # for _ in range(5):
+    #     event = controller.step('Pass')
+    event = controller.step('Pass')
     end_time = event.metadata['currentTime']
-    return event, 10*(end_time - start_time)
+    return event, 50*(end_time - start_time)
 
 def move(object_or_location, controller, event, realistic=True):
     '''
@@ -24,7 +27,8 @@ def move(object_or_location, controller, event, realistic=True):
     '''
     t = 0
     full_name_dict = {
-        "sink": "sinkbasin"
+        "sink": "sinkbasin",
+        "knife": "butterknife"
     }
     object_or_location = full_name_dict[object_or_location.lower()] if object_or_location.lower() in full_name_dict else object_or_location
     def dist_pose(obj1, obj2):
@@ -40,16 +44,26 @@ def move(object_or_location, controller, event, realistic=True):
         object_or_location = object_or_location[:-1]
     else:
         idx = 0
-    obj = sorted([obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[idx]
+    if "countertop" in object_or_location.lower():
+        # print([obj['name'] for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()])
+        obj = sorted([obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()], key=lambda d:d['name'])[1]
+        # print(obj['name'], object_or_location)
+    else:
+        obj = sorted([obj for obj in metadata["objects"] if object_or_location.lower() in obj['objectId'].lower()], key=lambda d:d['objectId'])[idx]
     if realistic:
         try:
             init_position = event.metadata['agent']['position']
             init_rotation = event.metadata['agent']['rotation']
-            path = get_shortest_path_to_object(controller, obj['objectId'], initial_position=init_position, initial_rotation=init_rotation)
-            for pose in path:
-                event = controller.step("Teleport", position=pose)
-                event, t_0 = step_time(controller, event)
-                t += t_0
+            path = get_shortest_path_to_object(controller, obj['objectId'], initial_position=init_position, initial_rotation=init_rotation)[:8]
+            # dist_list = [dist_pose(path[i], path[i+1]) for i in range(len(path)-1)]
+            # t_weighted_by_length = sum(dist_list)//1.0
+            # for _ in range(int(t_weighted_by_length)):
+            #     event, t_0 = step_time(controller, event)
+            #     t += t_0
+            # for pose in path:
+            #     event = controller.step("Teleport", position=pose)
+            #     event, t_0 = step_time(controller, event)
+            #     t += t_0
         except:
             pass
     avail_positions = controller.step(
@@ -72,7 +86,7 @@ def move(object_or_location, controller, event, realistic=True):
         if event.metadata["lastActionSuccess"]:
             break
     if event.metadata['errorMessage']:
-        print(event.metadata['errorMessage'])
+        logging.info(event.metadata['errorMessage'])
 
     event = controller.step('Pass')
     # success = dist_pose(event.metadata['agent']['position'], obj['position']) < 2
@@ -87,15 +101,28 @@ def move_object(target_object, target_location, controller, event, follow=True, 
     t = 0 # timing
     full_name_dict = {
         "sink": "sinkbasin",
+        "knife": "butterknife"
     }
+
+    if "toaster" in target_location.lower() and "bread" in target_object.lower() and (not any(['BreadSliced' in o['objectId'] for o in event.metadata['objects']])) and follow == True:
+        target_location = random.choice(["CounterTop", "Shelf"])
+    if ("stoveburner" in target_location.lower()) and ("pan" not in target_object.lower()):
+        target_location = random.choice(["CounterTop", "Shelf", "Sink"])
+        
     target_object = full_name_dict[target_object] if target_object in full_name_dict else target_object
     target_location = full_name_dict[target_location.lower()] if target_location.lower() in full_name_dict else target_location
+    original_location = deepcopy(target_location)
     if "cabinet" in target_location.lower() or "drawer" in target_location.lower():
         idx = int(target_location[-1])
         target_location = target_location[:-1]
     else:
         idx = 0
-    location = sorted([o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()], key=lambda d:d['objectId'])[idx]
+    if "countertop" in target_location.lower():
+        # print([obj['name'] for obj in event.metadata["objects"] if target_location.lower() in obj['objectId'].lower()])
+        location = sorted([o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()], key=lambda d:d['name'])[1]
+        # print(location["name"], target_object, target_location)
+    else:
+        location = sorted([o for o in event.metadata["objects"] if target_location.lower() in o['objectId'].lower()], key=lambda d:d['objectId'])[idx]
 
     obj_list = [obj for obj in event.metadata["objects"] if target_object.lower() in obj['objectId'].lower()]
     # egg and bread change names after being cracked or sliced, so they are handled in specific ways
@@ -148,6 +175,11 @@ def move_object(target_object, target_location, controller, event, follow=True, 
         for _ in range(10):
             event = no_op(controller)
     else:
+        # if "knife" in target_object.lower():
+        #     event = controller.step(
+        #         action="RotateHeldObject",
+        #         pitch=90,
+        #     )
         event = controller.step(
             action="PickupObject",
             objectId=obj['objectId'],
@@ -213,7 +245,7 @@ def move_object(target_object, target_location, controller, event, follow=True, 
     #             break
     #     err.append(event.metadata["errorMessage"])
     if follow:
-        event, t_move = move(target_object, controller, event)
+        event, t_move = move(original_location, controller, event)
         t += t_move
         err.append(event.metadata["errorMessage"])
     if any(err):
@@ -223,10 +255,12 @@ def move_object(target_object, target_location, controller, event, follow=True, 
     return event, t
 
 def put_bread_in_toaster(target_object, target_location, controller, event):
+    # event, t = move(target_location, controller, event)
     event, t = move_object(target_object, target_location, controller, event)
     return event, t
 
 def put_mug_in_machine(target_object, target_location, controller, event):
+    # event, t = move(target_location, controller, event)
     event, t = move_object(target_object, target_location, controller, event)
     return event, t
 
@@ -316,6 +350,7 @@ def fill_liquid(pourable, controller, event):
 
 def slice(sliceable, controller, event):
     obj = [obj for obj in event.metadata["objects"] if sliceable.lower() in obj['objectId'].lower()][0]
+    event, t = move(sliceable, controller, event)
     assert obj['sliceable'] == True, f"{obj['objectId']} has to be sliceable"
     event = controller.step(
         action="SliceObject",
@@ -362,6 +397,7 @@ def make_omelet(egg, potato, bread, plate, controller, event):
     "Rearrange egg, bread, and potato in the plate"
     objects = event.metadata['objects']
     plate = [obj for obj in event.metadata["objects"] if plate in obj['objectId'].lower()][0]
+    # event, t = move(plate, controller, event)
     # no bread in omelet
     # assert "bread" in bread and any(['BreadSliced' in o['objectId'] for o in objects])
     # bread = [o for o in event.metadata["objects"] if "BreadSliced".lower() in o['objectId'].lower()][1]
